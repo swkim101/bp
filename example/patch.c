@@ -1,0 +1,5 @@
+@foo
+void newfoo()
+{
+    return;
+}
