@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "debug.h"
 
 typedef struct {
     uint64_t vaddr;
@@ -135,14 +136,17 @@ static int collect_load_segments_elf64(const uint8_t *elf,
                                        size_t *count_out)
 {
     if (!span_ok(elf_size, 0, sizeof(Elf64_Ehdr))) {
+        fprintf(stderr, "target is not a valid ELF file\n");
         return -1;
     }
 
     const Elf64_Ehdr *eh = (const Elf64_Ehdr *)elf;
     if (eh->e_phentsize < sizeof(Elf64_Phdr)) {
+        fprintf(stderr, "invalid ELF program header size %u < %lu\n", eh->e_phentsize, (unsigned long)sizeof(Elf64_Phdr));
         return -1;
     }
     if (!span_ok(elf_size, eh->e_phoff, (uint64_t)eh->e_phentsize * eh->e_phnum)) {
+        fprintf(stderr, "invalid ELF program header offset or size\n");
         return -1;
     }
 
@@ -285,11 +289,13 @@ static int map_vaddr_to_offset(const LoadSegment *segs,
         uint64_t begin = segs[i].vaddr;
         uint64_t end_mem = begin + segs[i].memsz;
         if (vaddr < begin || vaddr >= end_mem) {
+            DEBUG("%p %p %p", (void *)vaddr, (void *)begin, (void *)end_mem);
             continue;
         }
 
         uint64_t delta = vaddr - begin;
         if (delta >= segs[i].filesz) {
+            DEBUG();
             return -1;
         }
 
@@ -304,6 +310,7 @@ static int map_vaddr_to_offset(const LoadSegment *segs,
         return 0;
     }
 
+    DEBUG();
     return -1;
 }
 
@@ -599,12 +606,14 @@ int apply_main(int argc, char **argv)
     size_t target_size = 0;
     mode_t target_mode = 0755;
     if (read_file_all(target_path, &target, &target_size, &target_mode) != 0) {
+        fprintf(stderr, "failed to read target file\n");
         return 1;
     }
 
     uint8_t *patch = NULL;
     size_t patch_size = 0;
     if (read_file_all(patch_path, &patch, &patch_size, NULL) != 0) {
+        fprintf(stderr, "failed to read patch file\n");
         free(target);
         return 1;
     }
@@ -612,6 +621,7 @@ int apply_main(int argc, char **argv)
     LoadSegment *segs = NULL;
     size_t seg_count = 0;
     if (collect_load_segments(target, target_size, &segs, &seg_count) != 0) {
+        fprintf(stderr, "failed to collect load segments\n");
         free(patch);
         free(target);
         return 1;
@@ -637,6 +647,7 @@ int apply_main(int argc, char **argv)
                     seg_count,
                     &sections_applied,
                     &bytes_applied) != 0) {
+        fprintf(stderr, "failed to apply patch\n");
         free(out);
         free(segs);
         free(patch);
@@ -649,6 +660,7 @@ int apply_main(int argc, char **argv)
     }
 
     if (write_file_all(output_path, out, target_size, target_mode) != 0) {
+        fprintf(stderr, "failed to write output file\n");
         free(out);
         free(segs);
         free(patch);
